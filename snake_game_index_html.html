@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>貪食蛇 Snake Game</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Arial, "Microsoft JhengHei", sans-serif;
+      background: linear-gradient(135deg, #141e30, #243b55);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      color: white;
+    }
+    .game-container {
+      text-align: center;
+      background: rgba(255, 255, 255, 0.08);
+      padding: 24px;
+      border-radius: 20px;
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+      max-width: 560px;
+    }
+    h1 { margin-top: 0; margin-bottom: 12px; }
+    .info {
+      display: flex;
+      justify-content: center;
+      gap: 16px;
+      margin-bottom: 12px;
+      font-size: 16px;
+      flex-wrap: wrap;
+    }
+    canvas {
+      background: #111827;
+      border: 3px solid #ffffff;
+      border-radius: 10px;
+      display: block;
+      margin: 0 auto;
+    }
+    button {
+      margin-top: 12px;
+      padding: 10px 18px;
+      border: none;
+      border-radius: 10px;
+      background: #22c55e;
+      color: white;
+      font-size: 16px;
+      cursor: pointer;
+    }
+    button:hover { background: #16a34a; }
+    .start-btn { background: #3b82f6; font-weight: bold; }
+    .start-btn:hover { background: #2563eb; }
+    .game-over {
+      color: #f87171;
+      font-weight: bold;
+      margin-top: 10px;
+      min-height: 24px;
+    }
+    .legend {
+      margin-top: 14px;
+      font-size: 14px;
+      color: #e5e7eb;
+      line-height: 1.8;
+      text-align: left;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+      padding: 14px 16px;
+    }
+    .legend h3 {
+      margin: 0 0 8px;
+      color: white;
+      text-align: center;
+    }
+    .dot {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+    .wall-icon {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      background: #9ca3af;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+    .notice {
+      margin-top: 10px;
+      color: #fde68a;
+      font-size: 14px;
+      min-height: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="game-container">
+    <h1>貪食蛇</h1>
+
+    <div class="info">
+      <div>分數：<span id="score">0</span></div>
+      <div>速度：<span id="speedText">180</span> ms</div>
+      <div>牆數：<span id="wallText">0</span> / 3</div>
+      <div>最高分：<span id="bestScore">0</span></div>
+    </div>
+
+    <canvas id="gameCanvas" width="440" height="400"></canvas>
+
+    <div class="game-over" id="gameOverText"></div>
+    <div class="notice" id="noticeText">請先閱讀下方說明，按「開始玩」後遊戲才會開始。</div>
+
+    <button class="start-btn" id="startBtn">開始玩</button>
+    <button id="restartBtn">重新開始</button>
+
+    <div class="legend">
+      <h3>遊戲說明</h3>
+      使用鍵盤 ↑ ↓ ← → 控制方向。<br>
+      撞到邊界、自己或灰色障礙牆會結束遊戲。<br><br>
+      <span class="dot" style="background:#ef4444;"></span>紅色：+10 分，蛇增長 1 格<br>
+      <span class="dot" style="background:#facc15;"></span>黃色：+20 分，蛇增長 1 格<br>
+      <span class="dot" style="background:#38bdf8;"></span>藍色：+30 分，蛇增長 1 格<br>
+      <span class="dot" style="background:#a855f7;"></span>紫色：+15 分，蛇增長 3 格<br>
+      <span class="dot" style="background:#22d3ee;"></span><span class="dot" style="background:#f472b6;"></span>傳送點：蛇頭碰到其中一個，會從另一個傳送點出來<br>
+      <span class="wall-icon"></span>灰色方塊：隨機障礙牆，最多同時 3 面<br><br>
+      蛇每增長 3 格，速度會提升 10ms。
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+
+    const scoreText = document.getElementById("score");
+    const bestScoreText = document.getElementById("bestScore");
+    const gameOverText = document.getElementById("gameOverText");
+    const speedText = document.getElementById("speedText");
+    const wallText = document.getElementById("wallText");
+    const noticeText = document.getElementById("noticeText");
+    const startBtn = document.getElementById("startBtn");
+    const restartBtn = document.getElementById("restartBtn");
+
+    const gridSize = 20;
+    const tileCountX = canvas.width / gridSize;
+    const tileCountY = canvas.height / gridSize;
+
+    const baseSpeed = 180;
+    const minSpeed = 80;
+    const initialSnakeLength = 3;
+    const foodCount = 5;
+    const maxWalls = 3;
+
+    let snake, foods, walls, wallGroups, portals;
+    let direction, nextDirection;
+    let score, gameOver, gameStarted;
+    let gameLoop, wallLoop, growthLeft, currentSpeed;
+    let bestScore = localStorage.getItem("snakeBestScore") || 0;
+    bestScoreText.textContent = bestScore;
+
+    const foodTypes = [
+      { color: "#ef4444", points: 10, grow: 1, weight: 5 },
+      { color: "#facc15", points: 20, grow: 1, weight: 4 },
+      { color: "#38bdf8", points: 30, grow: 1, weight: 3 },
+      { color: "#a855f7", points: 15, grow: 3, weight: 4 }
+    ];
+
+    function resetGameState() {
+      clearInterval(gameLoop);
+      clearInterval(wallLoop);
+
+      snake = [
+        { x: 11, y: 10 },
+        { x: 10, y: 10 },
+        { x: 9, y: 10 }
+      ];
+
+      foods = [];
+      walls = [];
+      wallGroups = [];
+      portals = [];
+
+      direction = { x: 1, y: 0 };
+      nextDirection = { x: 1, y: 0 };
+
+      score = 0;
+      growthLeft = 0;
+      gameOver = false;
+      gameStarted = false;
+      currentSpeed = baseSpeed;
+
+      scoreText.textContent = score;
+      speedText.textContent = currentSpeed;
+      wallText.textContent = wallGroups.length;
+      gameOverText.textContent = "";
+      noticeText.textContent = "請先閱讀下方說明，按「開始玩」後遊戲才會開始。";
+
+      createPortals();
+      for (let i = 0; i < foodCount; i++) createFood();
+      drawGame();
+    }
+
+    function startGame() {
+      if (gameStarted || gameOver) return;
+      gameStarted = true;
+      noticeText.textContent = "遊戲進行中。";
+      restartGameLoop();
+      restartWallLoop();
+    }
+
+    function restartGame() {
+      resetGameState();
+    }
+
+    function restartGameLoop() {
+      clearInterval(gameLoop);
+      gameLoop = setInterval(updateGame, currentSpeed);
+    }
+
+    function restartWallLoop() {
+      clearInterval(wallLoop);
+      wallLoop = setInterval(createWall, 7000);
+    }
+
+    function updateSpeed() {
+      const grownLength = snake.length - initialSnakeLength;
+      const speedBoostCount = Math.floor(grownLength / 3);
+      const newSpeed = Math.max(minSpeed, baseSpeed - speedBoostCount * 10);
+
+      if (newSpeed !== currentSpeed) {
+        currentSpeed = newSpeed;
+        speedText.textContent = currentSpeed;
+        if (gameStarted) restartGameLoop();
+      }
+    }
+
+    function updateGame() {
+      if (gameOver || !gameStarted) return;
+
+      direction = nextDirection;
+
+      let newHead = {
+        x: snake[0].x + direction.x,
+        y: snake[0].y + direction.y
+      };
+
+      newHead = applyPortal(newHead);
+
+      if (checkCollision(newHead)) {
+        endGame();
+        return;
+      }
+
+      snake.unshift(newHead);
+
+      const eatenIndex = foods.findIndex(food => food.x === newHead.x && food.y === newHead.y);
+      if (eatenIndex !== -1) {
+        const food = foods[eatenIndex];
+        score += food.points;
+        growthLeft += food.grow;
+        scoreText.textContent = score;
+        foods.splice(eatenIndex, 1);
+        createFood();
+      }
+
+      if (growthLeft > 0) growthLeft--;
+      else snake.pop();
+
+      updateSpeed();
+      drawGame();
+    }
+
+    function applyPortal(head) {
+      if (portals.length < 2) return head;
+      const [p1, p2] = portals;
+      if (head.x === p1.x && head.y === p1.y) return { x: p2.x, y: p2.y };
+      if (head.x === p2.x && head.y === p2.y) return { x: p1.x, y: p1.y };
+      return head;
+    }
+
+    function drawGame() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      drawGrid();
+      drawWalls();
+      drawPortals();
+      drawFoods();
+      drawSnake();
+    }
+
+    function drawGrid() {
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.08)";
+      for (let i = 0; i <= tileCountX; i++) {
+        ctx.beginPath();
+        ctx.moveTo(i * gridSize, 0);
+        ctx.lineTo(i * gridSize, canvas.height);
+        ctx.stroke();
+      }
+      for (let i = 0; i <= tileCountY; i++) {
+        ctx.beginPath();
+        ctx.moveTo(0, i * gridSize);
+        ctx.lineTo(canvas.width, i * gridSize);
+        ctx.stroke();
+      }
+    }
+
+    function drawSnake() {
+      snake.forEach((part, index) => {
+        ctx.fillStyle = index === 0 ? "#22c55e" : "#86efac";
+        ctx.fillRect(part.x * gridSize + 1, part.y * gridSize + 1, gridSize - 2, gridSize - 2);
+      });
+    }
+
+    function drawFoods() {
+      foods.forEach(food => {
+        ctx.fillStyle = food.color;
+        ctx.beginPath();
+        ctx.arc(food.x * gridSize + gridSize / 2, food.y * gridSize + gridSize / 2, gridSize / 2 - 2, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = "white";
+        ctx.font = "10px Arial";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(food.points, food.x * gridSize + gridSize / 2, food.y * gridSize + gridSize / 2);
+      });
+    }
+
+    function drawWalls() {
+      ctx.fillStyle = "#9ca3af";
+      walls.forEach(wall => {
+        ctx.fillRect(wall.x * gridSize + 1, wall.y * gridSize + 1, gridSize - 2, gridSize - 2);
+      });
+    }
+
+    function drawPortals() {
+      if (portals.length < 2) return;
+      const colors = ["#22d3ee", "#f472b6"];
+      portals.forEach((portal, index) => {
+        ctx.fillStyle = colors[index];
+        ctx.beginPath();
+        ctx.arc(portal.x * gridSize + gridSize / 2, portal.y * gridSize + gridSize / 2, gridSize / 2 - 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "white";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      });
+      ctx.lineWidth = 1;
+    }
+
+    function weightedRandomFoodType() {
+      const totalWeight = foodTypes.reduce((sum, type) => sum + type.weight, 0);
+      let r = Math.random() * totalWeight;
+      for (const type of foodTypes) {
+        r -= type.weight;
+        if (r <= 0) return type;
+      }
+      return foodTypes[0];
+    }
+
+    function createFood() {
+      let newFood;
+      let attempts = 0;
+      do {
+        attempts++;
+        const type = weightedRandomFoodType();
+        newFood = {
+          x: Math.floor(Math.random() * tileCountX),
+          y: Math.floor(Math.random() * tileCountY),
+          color: type.color,
+          points: type.points,
+          grow: type.grow
+        };
+        if (attempts > 300) return;
+      } while (!isEmptyCell(newFood.x, newFood.y));
+      foods.push(newFood);
+    }
+
+    function createPortals() {
+      portals = [];
+      while (portals.length < 2) {
+        const portal = {
+          x: Math.floor(Math.random() * tileCountX),
+          y: Math.floor(Math.random() * tileCountY)
+        };
+        if (isEmptyCell(portal.x, portal.y)) portals.push(portal);
+      }
+    }
+
+    function createWall() {
+      if (gameOver || !gameStarted) return;
+
+      if (wallGroups.length >= maxWalls) {
+        const oldWall = wallGroups.shift();
+        walls = walls.filter(cell => !oldWall.some(old => old.x === cell.x && old.y === cell.y));
+      }
+
+      const horizontal = Math.random() < 0.5;
+      const length = Math.floor(Math.random() * 5) + 5;
+      let newWall = [];
+      let attempts = 0;
+
+      while (attempts < 100) {
+        attempts++;
+        newWall = [];
+        const startX = Math.floor(Math.random() * tileCountX);
+        const startY = Math.floor(Math.random() * tileCountY);
+
+        for (let i = 0; i < length; i++) {
+          const x = horizontal ? startX + i : startX;
+          const y = horizontal ? startY : startY + i;
+          if (x >= tileCountX || y >= tileCountY) {
+            newWall = [];
+            break;
+          }
+          newWall.push({ x, y });
+        }
+
+        if (newWall.length >= 5 && newWall.every(cell => isEmptyCell(cell.x, cell.y))) {
+          wallGroups.push(newWall);
+          walls.push(...newWall);
+          wallText.textContent = wallGroups.length;
+          break;
+        }
+      }
+      drawGame();
+    }
+
+    function isEmptyCell(x, y) {
+      const onSnake = snake.some(part => part.x === x && part.y === y);
+      const onFood = foods.some(food => food.x === x && food.y === y);
+      const onWall = walls.some(wall => wall.x === x && wall.y === y);
+      const onPortal = portals.some(portal => portal.x === x && portal.y === y);
+      return !onSnake && !onFood && !onWall && !onPortal;
+    }
+
+    function checkCollision(head) {
+      if (head.x < 0 || head.x >= tileCountX || head.y < 0 || head.y >= tileCountY) return true;
+      const hitSelf = snake.some(part => part.x === head.x && part.y === head.y);
+      const hitWall = walls.some(wall => wall.x === head.x && wall.y === head.y);
+      return hitSelf || hitWall;
+    }
+
+    function endGame() {
+      gameOver = true;
+      gameStarted = false;
+      clearInterval(gameLoop);
+      clearInterval(wallLoop);
+
+      if (score > bestScore) {
+        bestScore = score;
+        localStorage.setItem("snakeBestScore", bestScore);
+        bestScoreText.textContent = bestScore;
+      }
+      gameOverText.textContent = "遊戲結束！你撞到牆、自己或障礙物了。";
+      noticeText.textContent = "按「重新開始」重置後，再按「開始玩」。";
+    }
+
+    document.addEventListener("keydown", event => {
+      if (!gameStarted) return;
+      if (event.key === "ArrowUp" && direction.y !== 1) nextDirection = { x: 0, y: -1 };
+      else if (event.key === "ArrowDown" && direction.y !== -1) nextDirection = { x: 0, y: 1 };
+      else if (event.key === "ArrowLeft" && direction.x !== 1) nextDirection = { x: -1, y: 0 };
+      else if (event.key === "ArrowRight" && direction.x !== -1) nextDirection = { x: 1, y: 0 };
+    });
+
+    startBtn.addEventListener("click", startGame);
+    restartBtn.addEventListener("click", restartGame);
+
+    resetGameState();
+  </script>
+</body>
+</html>
